@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Waqty — Gestion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Manrope:wght@400;500;700;800&family=Space+Grotesk:wght@600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg:#0B1E23; --bg2:#123138; --card:#16333B;
+    --gold:#C9A24B; --gold-soft:#E4C978;
+    --text:#F4EEE1; --muted:#7FA0A6; --teal:#2F6E73; --danger:#B8543F; --ok:#5BAF6F;
+  }
+  *{ box-sizing:border-box; }
+  body{
+    margin:0; min-height:100vh; background:linear-gradient(180deg,var(--bg2),var(--bg) 30%);
+    color:var(--text); font-family:'Manrope',sans-serif;
+    display:flex; justify-content:center;
+  }
+  .app{ width:100%; max-width:480px; min-height:100vh; padding:24px 20px 100px; position:relative; }
+  h1{ font-family:'Amiri',serif; font-size:26px; margin:0 0 4px; }
+  .sub{ color:var(--muted); font-size:14px; margin-bottom:24px; }
+  .card{ background:var(--card); border:1px solid rgba(255,255,255,.06); border-radius:16px; padding:18px; margin-bottom:14px; }
+  label{ display:block; font-size:13px; color:var(--muted); margin-bottom:6px; margin-top:14px; }
+  label:first-child{ margin-top:0; }
+  input, select{
+    width:100%; padding:12px 14px; border-radius:10px; border:1px solid rgba(255,255,255,.12);
+    background:rgba(255,255,255,.04); color:var(--text); font-family:'Manrope',sans-serif; font-size:16px;
+  }
+  input:focus, select:focus{ outline:none; border-color:var(--gold); }
+  .btn{
+    width:100%; padding:14px; border-radius:12px; border:none; font-weight:700; font-size:16px;
+    background:var(--gold); color:var(--bg); margin-top:18px; cursor:pointer;
+  }
+  .btn.secondary{ background:transparent; border:1px solid var(--gold); color:var(--gold-soft); }
+  .btn:active{ transform:scale(.98); }
+  .row{ display:flex; gap:10px; }
+  .row > *{ flex:1; }
+  .stepper{ display:flex; align-items:center; gap:10px; }
+  .stepper button{
+    width:38px; height:38px; border-radius:50%; border:1px solid rgba(255,255,255,.15);
+    background:rgba(255,255,255,.05); color:var(--text); font-size:18px; cursor:pointer;
+  }
+  .stepper span{ min-width:70px; text-align:center; font-family:'Space Grotesk',sans-serif; font-size:17px; }
+  .prayer-line{ display:flex; justify-content:space-between; align-items:center; padding:10px 0; border-bottom:1px solid rgba(255,255,255,.05); }
+  .prayer-line:last-child{ border-bottom:none; }
+  .prayer-line .pname{ font-family:'Amiri',serif; font-size:16px; }
+  .tabs{ position:fixed; bottom:0; left:0; right:0; display:flex; justify-content:center; background:rgba(11,30,35,.92); backdrop-filter:blur(10px); border-top:1px solid rgba(255,255,255,.06); }
+  .tabs-inner{ width:100%; max-width:480px; display:flex; }
+  .tab{ flex:1; text-align:center; padding:14px 0 10px; color:var(--muted); font-size:12px; cursor:pointer; }
+  .tab.active{ color:var(--gold-soft); }
+  .tab .ic{ font-size:20px; display:block; margin-bottom:2px; }
+  .hidden{ display:none !important; }
+  .toast{
+    position:fixed; top:20px; left:50%; transform:translateX(-50%); background:var(--card); border:1px solid var(--gold);
+    color:var(--text); padding:10px 18px; border-radius:10px; font-size:14px; z-index:50; opacity:0; transition:opacity .3s;
+  }
+  .toast.show{ opacity:1; }
+  .code-input{ text-align:center; font-family:'Space Grotesk',sans-serif; font-size:28px; letter-spacing:.3em; font-weight:700; }
+  .status-line{ display:flex; justify-content:space-between; align-items:center; font-size:14px; padding:10px 0; }
+  .dot{ width:9px; height:9px; border-radius:50%; display:inline-block; margin-right:6px; }
+  .dot.online{ background:var(--ok); } .dot.offline{ background:var(--danger); }
+  #recaptcha-container{ margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ÉCRAN CONNEXION -->
+  <div id="loginScreen">
+    <h1>Waqty</h1>
+    <div class="sub">Gérez les horaires de votre mosquée en quelques secondes.</div>
+    <div class="card">
+      <div id="phoneStep">
+        <label>Numéro de téléphone</label>
+        <input id="phoneInput" type="tel" placeholder="+222 XX XX XX XX">
+        <div id="recaptcha-container"></div>
+        <button class="btn" onclick="sendCode()">Recevoir le code</button>
+      </div>
+      <div id="codeStep" class="hidden">
+        <label>Code reçu par SMS</label>
+        <input id="otpInput" type="tel" placeholder="123456" class="code-input">
+        <button class="btn" onclick="verifyCode()">Se connecter</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- APP PRINCIPALE -->
+  <div id="mainApp" class="hidden">
+
+    <!-- Onglet Accueil -->
+    <div id="tabHome">
+      <h1 id="homeMosqueName">Ma mosquée</h1>
+      <div class="sub" id="homeMosqueCity">—</div>
+
+      <div class="card" id="noMosqueCard">
+        <div class="sub">Aucune mosquée configurée pour l'instant.</div>
+        <button class="btn" onclick="showTab('settings')">Créer ma fiche mosquée</button>
+      </div>
+
+      <div class="card hidden" id="pairCard">
+        <label>Coupler un nouvel écran TV</label>
+        <div class="sub" style="margin:0 0 8px;">Entrez le code affiché sur la TV.</div>
+        <input id="pairCode" class="code-input" maxlength="6" placeholder="000000">
+        <button class="btn" onclick="pairScreen()">Coupler l'écran</button>
+      </div>
+
+      <div class="card hidden" id="screensCard">
+        <label>Écrans liés</label>
+        <div id="screensList"></div>
+      </div>
+
+      <div class="card hidden" id="khutbaCard">
+        <label>Mode Khutba (vendredi)</label>
+        <div class="sub" id="khutbaStatus" style="margin-bottom:10px;">Inactif</div>
+        <button class="btn" id="khutbaStartBtn" onclick="startKhutba()">Démarrer la Khutba</button>
+        <button class="btn secondary hidden" id="khutbaStopBtn" onclick="stopKhutba()">Terminer la Khutba</button>
+      </div>
+    </div>
+
+    <!-- Onglet Réglages -->
+    <div id="tabSettings" class="hidden">
+      <h1>Réglages</h1>
+      <div class="sub">Ces changements se répercutent en direct sur les écrans.</div>
+
+      <div class="card">
+        <label>Nom de la mosquée</label>
+        <input id="setName" placeholder="Mosquée Ibn Abbas">
+        <label>Ville</label>
+        <input id="setCity" placeholder="Nouakchott">
+        <button class="btn secondary" onclick="detectLocation()">📍 Détecter ma position</button>
+        <div class="sub" id="locStatus" style="margin-top:8px;"></div>
+
+        <label>Méthode de calcul</label>
+        <select id="setMethod">
+          <option value="MWL">Ligue Islamique Mondiale (par défaut)</option>
+          <option value="Egyptian">Autorité Égyptienne</option>
+          <option value="Makkah">Umm al-Qura (Makkah)</option>
+          <option value="Karachi">Karachi</option>
+          <option value="ISNA">ISNA (Amérique du Nord)</option>
+        </select>
+
+        <label>École pour l'Asr</label>
+        <select id="setAsr">
+          <option value="standard">Standard (Chaféite, Malikite, Hanbalite)</option>
+          <option value="hanafi">Hanafite</option>
+        </select>
+
+        <button class="btn" onclick="saveBasics()">Enregistrer</button>
+      </div>
+
+      <div class="card">
+        <label style="margin-top:0;">Ajustements manuels (minutes)</label>
+        <div class="sub" style="margin-bottom:6px;">Utile pour Ramadan ou un usage local particulier.</div>
+        <div id="adjustList"></div>
+      </div>
+
+      <div class="card">
+        <label style="margin-top:0;">Délai avant l'Iqama (minutes après l'adhan)</label>
+        <div id="iqamaList"></div>
+      </div>
+
+      <div class="card">
+        <label style="margin-top:0;">Bandeau d'annonce (affiché en bas de l'écran)</label>
+        <input id="setAnnounce" placeholder="Cours après Maghrib avec l'imam...">
+        <button class="btn" onclick="saveAnnounce()">Enregistrer l'annonce</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="tabs hidden" id="tabs">
+    <div class="tabs-inner">
+      <div class="tab active" id="tabBtnHome" onclick="showTab('home')"><span class="ic">🏠</span>Accueil</div>
+      <div class="tab" id="tabBtnSettings" onclick="showTab('settings')"><span class="ic">⚙️</span>Réglages</div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+</div>
+
+<script>
+/* ============================================================
+   Waqty — Admin (single-file HTML/JS + Firebase)
+   ============================================================ */
+const firebaseConfig = {
+  apiKey: "AIzaSyC2souID5YhMh3etQ_KMvlpGRqAZFpP3bQ",
+  authDomain: "waqty-f79a2.firebaseapp.com",
+  projectId: "waqty-f79a2",
+  storageBucket: "waqty-f79a2.firebasestorage.app",
+  messagingSenderId: "537381611733",
+  appId: "1:537381611733:web:74c563b014394abf341a5c"
+};
+const DEMO_MODE = firebaseConfig.apiKey === "REPLACE_ME";
+let auth = null, db = null;
+if (!DEMO_MODE){
+  firebase.initializeApp(firebaseConfig);
+  auth = firebase.auth();
+  db = firebase.firestore();
+}
+
+const PRAYER_KEYS = ["fajr","sunrise","dhuhr","asr","maghrib","isha"];
+const PRAYER_LABELS = { fajr:"Fajr", sunrise:"Lever", dhuhr:"Dhuhr", asr:"Asr", maghrib:"Maghrib", isha:"Isha" };
+const IQAMA_KEYS = ["fajr","dhuhr","asr","maghrib","isha"];
+
+let currentUser = null;
+let currentMosqueId = null;
+let currentMosque = null;
+let confirmationResult = null;
+
+function toast(msg){
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.classList.add("show");
+  setTimeout(()=>t.classList.remove("show"), 2200);
+}
+
+// ---------------- AUTH (téléphone / OTP) ----------------
+window.onload = function(){
+  if (DEMO_MODE){
+    document.getElementById("phoneStep").innerHTML =
+      '<div class="sub" style="color:#E4C978;">Mode démo — les clés Firebase ne sont pas encore configurées dans ce fichier. ' +
+      'Remplacez les valeurs "REPLACE_ME" en haut du script pour activer la connexion par SMS.</div>';
+    return;
+  }
+  window.recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', { size:'invisible' });
+};
+
+function sendCode(){
+  const phone = document.getElementById("phoneInput").value.trim();
+  if (!phone){ toast("Entrez un numéro valide"); return; }
+  auth.signInWithPhoneNumber(phone, window.recaptchaVerifier)
+    .then(res=>{
+      confirmationResult = res;
+      document.getElementById("phoneStep").classList.add("hidden");
+      document.getElementById("codeStep").classList.remove("hidden");
+      toast("Code envoyé par SMS");
+    })
+    .catch(err=> toast("Erreur : " + err.message));
+}
+
+function verifyCode(){
+  const code = document.getElementById("otpInput").value.trim();
+  confirmationResult.confirm(code)
+    .then(result=>{ currentUser = result.user; onLoggedIn(); })
+    .catch(()=> toast("Code incorrect"));
+}
+
+if (!DEMO_MODE){
+  auth.onAuthStateChanged(user=>{
+    if (user){ currentUser = user; onLoggedIn(); }
+  });
+}
+
+async function onLoggedIn(){
+  document.getElementById("loginScreen").classList.add("hidden");
+  document.getElementById("mainApp").classList.remove("hidden");
+  document.getElementById("tabs").classList.remove("hidden");
+
+  const userDoc = await db.collection("users").doc(currentUser.uid).get();
+  const userData = userDoc.exists ? userDoc.data() : null;
+
+  if (userData && userData.mosqueIds && userData.mosqueIds.length){
+    currentMosqueId = userData.mosqueIds[0];
+    listenToMosque();
+    document.getElementById("noMosqueCard").classList.add("hidden");
+    document.getElementById("pairCard").classList.remove("hidden");
+    document.getElementById("screensCard").classList.remove("hidden");
+    document.getElementById("khutbaCard").classList.remove("hidden");
+    listenToScreens();
+  } else {
+    await db.collection("users").doc(currentUser.uid).set({ phone: currentUser.phoneNumber, mosqueIds: [] }, { merge:true });
+  }
+}
+
+// ---------------- MOSQUÉE : lecture / écriture ----------------
+function listenToMosque(){
+  db.collection("mosques").doc(currentMosqueId).onSnapshot(doc=>{
+    if (!doc.exists) return;
+    currentMosque = doc.data();
+    document.getElementById("homeMosqueName").textContent = currentMosque.name || "Ma mosquée";
+    document.getElementById("homeMosqueCity").textContent = currentMosque.city || "";
+    fillSettingsForm();
+    renderKhutbaStatus();
+  });
+}
+
+function renderKhutbaStatus(){
+  const active = currentMosque.khutba && currentMosque.khutba.active;
+  document.getElementById("khutbaStatus").textContent = active ? "En cours — diffusé sur les écrans" : "Inactif";
+  document.getElementById("khutbaStartBtn").classList.toggle("hidden", !!active);
+  document.getElementById("khutbaStopBtn").classList.toggle("hidden", !active);
+}
+
+async function startKhutba(){
+  await db.collection("mosques").doc(currentMosqueId).update({
+    "khutba.active": true,
+    "khutba.startedAt": firebase.firestore.FieldValue.serverTimestamp()
+  });
+  toast("Khutba démarrée — les écrans basculent automatiquement");
+}
+
+async function stopKhutba(){
+  await db.collection("mosques").doc(currentMosqueId).update({ "khutba.active": false });
+  toast("Khutba terminée");
+}
+
+function fillSettingsForm(){
+  if (!currentMosque) return;
+  document.getElementById("setName").value = currentMosque.name || "";
+  document.getElementById("setCity").value = currentMosque.city || "";
+  document.getElementById("setMethod").value = currentMosque.calcMethod || "MWL";
+  document.getElementById("setAsr").value = currentMosque.asrMethod || "standard";
+  document.getElementById("setAnnounce").value = (currentMosque.branding && currentMosque.branding.announcementText) || "";
+  renderAdjustList();
+  renderIqamaList();
+}
+
+async function createMosque(){
+  const ref = db.collection("mosques").doc();
+  currentMosqueId = ref.id;
+  const data = {
+    name: document.getElementById("setName").value || "Ma mosquée",
+    city: document.getElementById("setCity").value || "",
+    country: "MR",
+    lat: 18.0858, lng: -15.9785, timezone: "Africa/Nouakchott", // valeurs par défaut Nouakchott, ajustées via géolocalisation
+    calcMethod: "MWL", asrMethod: "standard",
+    adjustments: { fajr:0, sunrise:0, dhuhr:0, asr:0, maghrib:0, isha:0 },
+    iqamaDelays: { fajr:20, dhuhr:15, asr:15, maghrib:5, isha:15 },
+    branding: { logoUrl:"", primaryColor:"#C9A24B", announcementText:"" },
+    plan:"free", ownerUid: currentUser.uid,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  };
+  await ref.set(data);
+  await db.collection("users").doc(currentUser.uid).set({ mosqueIds: firebase.firestore.FieldValue.arrayUnion(ref.id) }, { merge:true });
+  currentMosque = data;
+  document.getElementById("noMosqueCard").classList.add("hidden");
+  document.getElementById("pairCard").classList.remove("hidden");
+  document.getElementById("screensCard").classList.remove("hidden");
+  document.getElementById("khutbaCard").classList.remove("hidden");
+  listenToMosque(); listenToScreens();
+  toast("Fiche mosquée créée");
+}
+
+async function saveBasics(){
+  if (!currentMosqueId){ await createMosque(); return; }
+  await db.collection("mosques").doc(currentMosqueId).update({
+    name: document.getElementById("setName").value,
+    city: document.getElementById("setCity").value,
+    calcMethod: document.getElementById("setMethod").value,
+    asrMethod: document.getElementById("setAsr").value
+  });
+  toast("Réglages enregistrés");
+}
+
+async function saveAnnounce(){
+  if (!currentMosqueId) return;
+  await db.collection("mosques").doc(currentMosqueId).update({
+    "branding.announcementText": document.getElementById("setAnnounce").value
+  });
+  toast("Annonce mise à jour");
+}
+
+function detectLocation(){
+  if (!navigator.geolocation){ toast("Géolocalisation non supportée"); return; }
+  document.getElementById("locStatus").textContent = "Détection en cours…";
+  navigator.geolocation.getCurrentPosition(async pos=>{
+    const { latitude, longitude } = pos.coords;
+    document.getElementById("locStatus").textContent = "Position détectée ✓";
+    if (currentMosqueId){
+      await db.collection("mosques").doc(currentMosqueId).update({ lat: latitude, lng: longitude });
+      toast("Position mise à jour");
+    }
+  }, ()=> document.getElementById("locStatus").textContent = "Impossible de détecter la position");
+}
+
+// ---------------- Ajustements & Iqama (steppers) ----------------
+function renderAdjustList(){
+  const el = document.getElementById("adjustList");
+  el.innerHTML = "";
+  PRAYER_KEYS.forEach(k=>{
+    const val = (currentMosque.adjustments && currentMosque.adjustments[k]) || 0;
+    const line = document.createElement("div");
+    line.className = "prayer-line";
+    line.innerHTML =
+      '<div class="pname">'+PRAYER_LABELS[k]+'</div>' +
+      '<div class="stepper">' +
+        '<button onclick="stepAdjust(\''+k+'\',-1)">−</button>' +
+        '<span id="adj_'+k+'">'+(val>0?"+":"")+val+' min</span>' +
+        '<button onclick="stepAdjust(\''+k+'\',1)">+</button>' +
+      '</div>';
+    el.appendChild(line);
+  });
+}
+async function stepAdjust(k, dir){
+  const cur = (currentMosque.adjustments && currentMosque.adjustments[k]) || 0;
+  const next = cur + dir;
+  document.getElementById("adj_"+k).textContent = (next>0?"+":"")+next+" min";
+  currentMosque.adjustments = currentMosque.adjustments || {};
+  currentMosque.adjustments[k] = next;
+  await db.collection("mosques").doc(currentMosqueId).update({ ["adjustments."+k]: next });
+}
+
+function renderIqamaList(){
+  const el = document.getElementById("iqamaList");
+  el.innerHTML = "";
+  IQAMA_KEYS.forEach(k=>{
+    const val = (currentMosque.iqamaDelays && currentMosque.iqamaDelays[k]) || 0;
+    const line = document.createElement("div");
+    line.className = "prayer-line";
+    line.innerHTML =
+      '<div class="pname">'+PRAYER_LABELS[k]+'</div>' +
+      '<div class="stepper">' +
+        '<button onclick="stepIqama(\''+k+'\',-1)">−</button>' +
+        '<span id="iq_'+k+'">'+val+' min</span>' +
+        '<button onclick="stepIqama(\''+k+'\',1)">+</button>' +
+      '</div>';
+    el.appendChild(line);
+  });
+}
+async function stepIqama(k, dir){
+  const cur = (currentMosque.iqamaDelays && currentMosque.iqamaDelays[k]) || 0;
+  const next = Math.max(0, cur + dir);
+  document.getElementById("iq_"+k).textContent = next+" min";
+  currentMosque.iqamaDelays = currentMosque.iqamaDelays || {};
+  currentMosque.iqamaDelays[k] = next;
+  await db.collection("mosques").doc(currentMosqueId).update({ ["iqamaDelays."+k]: next });
+}
+
+// ---------------- Couplage écran ----------------
+async function pairScreen(){
+  const code = document.getElementById("pairCode").value.trim();
+  if (code.length !== 6){ toast("Code à 6 chiffres requis"); return; }
+  const ref = db.collection("pairingCodes").doc(code);
+  const doc = await ref.get();
+  if (!doc.exists || doc.data().status !== "waiting"){ toast("Code invalide ou déjà utilisé"); return; }
+
+  const screenRef = db.collection("mosques").doc(currentMosqueId).collection("screens").doc();
+  await screenRef.set({ label:"Écran "+code, status:"paired", lastSeen: firebase.firestore.FieldValue.serverTimestamp() });
+  await ref.update({ status:"claimed", mosqueId: currentMosqueId, screenId: screenRef.id });
+  toast("Écran couplé avec succès");
+  document.getElementById("pairCode").value = "";
+}
+
+function listenToScreens(){
+  db.collection("mosques").doc(currentMosqueId).collection("screens").onSnapshot(snap=>{
+    const list = document.getElementById("screensList");
+    list.innerHTML = "";
+    if (snap.empty){ list.innerHTML = '<div class="sub">Aucun écran couplé.</div>'; return; }
+    snap.forEach(doc=>{
+      const d = doc.data();
+      const lastSeen = d.lastSeen ? d.lastSeen.toDate() : null;
+      const isOnline = lastSeen && (Date.now() - lastSeen.getTime() < 15*60*1000);
+      const line = document.createElement("div");
+      line.className = "status-line";
+      line.innerHTML =
+        '<span><span class="dot '+(isOnline?"online":"offline")+'"></span>'+(d.label||"Écran")+'</span>' +
+        '<span class="sub">'+(lastSeen ? lastSeen.toLocaleTimeString() : "jamais connecté")+'</span>';
+      list.appendChild(line);
+    });
+  });
+}
+
+// ---------------- Navigation onglets ----------------
+function showTab(name){
+  document.getElementById("tabHome").classList.toggle("hidden", name!=="home");
+  document.getElementById("tabSettings").classList.toggle("hidden", name!=="settings");
+  document.getElementById("tabBtnHome").classList.toggle("active", name==="home");
+  document.getElementById("tabBtnSettings").classList.toggle("active", name==="settings");
+}
+</script>
+</body>
+</html>

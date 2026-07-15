@@ -1,0 +1,525 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Waqty — Écran</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Amiri:wght@400;700&family=Manrope:wght@400;500;700;800&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+<style>
+  :root{
+    --bg-deep:#0B1E23;
+    --bg-deep2:#123138;
+    --gold:#C9A24B;
+    --gold-soft:#E4C978;
+    --text-warm:#F4EEE1;
+    --text-muted:#7FA0A6;
+    --teal:#2F6E73;
+    --danger:#B8543F;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    width:100%; height:100%; overflow:hidden;
+    background:radial-gradient(ellipse at 50% -10%, var(--bg-deep2) 0%, var(--bg-deep) 60%);
+    color:var(--text-warm);
+    font-family:'Manrope',sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  /* motif géométrique d'ambiance, très discret */
+  .arabesque{
+    position:fixed; inset:0; z-index:0; opacity:.05; pointer-events:none;
+    background-image:
+      conic-gradient(from 0deg at 50% 50%, transparent 0deg, var(--gold) 2deg, transparent 4deg);
+    background-size:120px 120px;
+    animation:spin 240s linear infinite;
+  }
+  @keyframes spin{ to{ transform:rotate(360deg);} }
+
+  .screen{ position:relative; z-index:1; width:100vw; height:100vh; display:flex; flex-direction:column; padding:3vh 4vw; }
+
+  header{ display:flex; justify-content:space-between; align-items:baseline; }
+  .mosque-name{ font-family:'Amiri', serif; font-weight:700; font-size:clamp(22px,2.6vw,40px); letter-spacing:.02em; }
+  .mosque-sub{ color:var(--text-muted); font-size:clamp(13px,1.1vw,18px); margin-top:4px; }
+  .dates{ text-align:right; color:var(--text-muted); font-size:clamp(13px,1.1vw,18px); line-height:1.5;}
+  .dates b{ color:var(--text-warm); font-weight:600; }
+
+  .clock-zone{ flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1vh; }
+  .clock{ font-family:'Space Grotesk', sans-serif; font-variant-numeric:tabular-nums; font-weight:700;
+    font-size:clamp(80px,14vw,220px); letter-spacing:.01em; line-height:1; text-shadow:0 0 60px rgba(201,162,75,.15); }
+  .clock .sec{ font-size:.4em; color:var(--text-muted); vertical-align:top; margin-inline-start:.15em; }
+
+  .next-arch{
+    position:relative; width:min(70vw,760px); height:clamp(90px,14vh,150px);
+    border-radius:400px 400px 0 0 / 220px 220px 0 0;
+    border:2px solid rgba(201,162,75,.35);
+    border-bottom:none;
+    overflow:hidden;
+    display:flex; align-items:flex-end; justify-content:center;
+    background:rgba(255,255,255,.02);
+  }
+  .next-arch .fill{
+    position:absolute; left:0; right:0; bottom:0; height:0%;
+    background:linear-gradient(180deg, var(--gold-soft), var(--gold) 60%, rgba(201,162,75,0));
+    box-shadow:0 0 40px 10px rgba(228,201,120,.35);
+    transition:height 1s linear;
+  }
+  .next-label{ position:relative; z-index:2; padding-bottom:1.2vh; text-align:center; }
+  .next-label .name{ font-family:'Amiri',serif; font-size:clamp(20px,2vw,30px); font-weight:700; }
+  .next-label .countdown{ font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:clamp(14px,1.3vw,20px); color:var(--bg-deep); font-weight:600; }
+  .next-label .countdown.light{ color:var(--text-warm); }
+
+  .prayers-row{ display:flex; justify-content:space-between; gap:1vw; margin-top:2vh; }
+  .prayer-card{
+    flex:1; text-align:center; padding:1.6vh 0.5vw; border-radius:16px;
+    border:1px solid rgba(255,255,255,.06); background:rgba(255,255,255,.02);
+  }
+  .prayer-card.active{
+    border-color:rgba(201,162,75,.6);
+    background:linear-gradient(180deg, rgba(201,162,75,.14), rgba(201,162,75,.02));
+    box-shadow:0 0 30px rgba(201,162,75,.12);
+  }
+  .prayer-card .pname{ font-family:'Amiri',serif; font-weight:700; font-size:clamp(15px,1.4vw,22px); }
+  .prayer-card .ptime{ font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-size:clamp(20px,2vw,32px); margin-top:.4vh; font-weight:600; }
+  .prayer-card .piqama{ color:var(--text-muted); font-size:clamp(10px,.9vw,14px); margin-top:.3vh; }
+
+  .ticker{ margin-top:2vh; overflow:hidden; white-space:nowrap; position:relative; min-height:1.6em; }
+  .ticker.empty{ display:none; }
+  .ticker-track{
+    display:inline-block; padding-left:100%;
+    color:var(--gold-soft); font-family:'Amiri',serif; font-weight:700;
+    font-size:clamp(18px,2.2vw,30px);
+    animation: ticker-scroll 24s linear infinite;
+  }
+  @keyframes ticker-scroll{ from{ transform:translateX(0); } to{ transform:translateX(-100%); } }
+
+  .status-badge{
+    position:fixed; bottom:1.5vh; right:2vw; font-size:12px; color:var(--text-muted);
+    display:flex; align-items:center; gap:6px; opacity:.6;
+  }
+  .dot{ width:8px; height:8px; border-radius:50%; background:#5BAF6F; }
+  .dot.offline{ background:var(--danger); }
+  .dot.syncing{ background:var(--gold); animation:pulse 1.2s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{opacity:1;} 50%{opacity:.3;} }
+
+  /* Écran de couplage */
+  .pairing{
+    position:fixed; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2vh;
+    background:radial-gradient(ellipse at 50% 40%, var(--bg-deep2), var(--bg-deep));
+    text-align:center; padding:4vw;
+  }
+  .pairing h1{ font-family:'Amiri',serif; font-size:clamp(24px,3vw,40px); }
+  .pairing p{ color:var(--text-muted); max-width:560px; font-size:clamp(14px,1.3vw,19px); line-height:1.6; }
+  .code{
+    font-family:'Space Grotesk',sans-serif; font-weight:700; letter-spacing:.3em;
+    font-size:clamp(48px,8vw,110px); color:var(--gold-soft);
+    text-shadow:0 0 50px rgba(201,162,75,.35);
+    padding:1vh 2vw; border:2px solid rgba(201,162,75,.4); border-radius:20px;
+  }
+  .hidden{ display:none !important; }
+
+  /* Écran Khutba (vendredi) */
+  .khutba-screen{
+    position:fixed; inset:0; z-index:4; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3vh;
+    background:radial-gradient(ellipse at 50% 40%, var(--bg-deep2), var(--bg-deep));
+  }
+  .khutba-label{ font-family:'Amiri',serif; font-size:clamp(24px,3vw,42px); color:var(--gold-soft); letter-spacing:.04em; }
+  .khutba-sub{ color:var(--text-muted); font-size:clamp(14px,1.3vw,20px); }
+  .khutba-timer{
+    font-family:'Space Grotesk',sans-serif; font-variant-numeric:tabular-nums; font-weight:700;
+    font-size:clamp(70px,12vw,180px); text-shadow:0 0 60px rgba(201,162,75,.2);
+  }
+  .khutba-ring{
+    width:min(50vw,420px); height:2px; background:linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity:.5;
+  }
+  @media (prefers-reduced-motion: reduce){ .arabesque{ animation:none; } .dot.syncing{ animation:none; } }
+</style>
+</head>
+<body>
+
+<div class="arabesque"></div>
+
+<!-- ÉCRAN DE COUPLAGE (affiché tant qu'aucune mosquée n'est liée) -->
+<div id="pairingScreen" class="pairing hidden">
+  <h1>Coupler cet écran</h1>
+  <p>Ouvrez l'application Waqty sur votre téléphone, connectez-vous, puis entrez ce code pour lier cet écran à votre mosquée.</p>
+  <div class="code" id="pairingCode">------</div>
+  <p id="pairingStatus">En attente de couplage…</p>
+</div>
+
+<!-- ÉCRAN PRINCIPAL -->
+<div id="mainScreen" class="screen hidden">
+  <header>
+    <div>
+      <div class="mosque-name" id="mosqueName">Mosquée</div>
+      <div class="mosque-sub" id="mosqueCity">—</div>
+    </div>
+    <div class="dates">
+      <div id="gregDate">—</div>
+      <div id="hijriDate"><b>—</b></div>
+    </div>
+  </header>
+
+  <div class="clock-zone">
+    <div class="clock" id="clock">--:--<span class="sec" id="clockSec">--</span></div>
+
+    <div class="next-arch">
+      <div class="fill" id="arcFill"></div>
+      <div class="next-label">
+        <div class="name" id="nextName">—</div>
+        <div class="countdown" id="nextCountdown">—</div>
+      </div>
+    </div>
+
+    <div class="prayers-row" id="prayersRow"></div>
+    <div class="ticker" id="tickerWrap"><div class="ticker-track" id="ticker"></div></div>
+  </div>
+</div>
+
+<div class="status-badge">
+  <span class="dot" id="statusDot"></span>
+  <span id="statusText">Connexion…</span>
+</div>
+
+<!-- ÉCRAN KHUTBA (activé/désactivé depuis l'admin, mosques/{id}.khutba.active) -->
+<div id="khutbaScreen" class="khutba-screen hidden">
+  <div class="khutba-label">Khutba en cours</div>
+  <div class="khutba-ring"></div>
+  <div class="khutba-timer" id="khutbaTimer">00:00</div>
+  <div class="khutba-sub">Silence, téléphones en mode avion</div>
+</div>
+
+<script>
+/* ============================================================
+   Waqty — TV Display
+   Architecture: single-file HTML/JS + Firebase (Firestore)
+   ============================================================ */
+
+// --- CONFIG FIREBASE : à remplacer par les vraies clés du projet ---
+const firebaseConfig = {
+  apiKey: "AIzaSyC2souID5YhMh3etQ_KMvlpGRqAZFpP3bQ",
+  authDomain: "waqty-f79a2.firebaseapp.com",
+  projectId: "waqty-f79a2",
+  storageBucket: "waqty-f79a2.firebasestorage.app",
+  messagingSenderId: "537381611733",
+  appId: "1:537381611733:web:74c563b014394abf341a5c"
+};
+const DEMO_MODE = firebaseConfig.apiKey === "REPLACE_ME";
+let db = null;
+if (!DEMO_MODE){
+  firebase.initializeApp(firebaseConfig);
+  db = firebase.firestore();
+  try { db.enablePersistence({ synchronizeTabs: true }); } catch(e) { /* déjà activé ou navigateur non supporté */ }
+}
+
+// Données de démonstration affichées tant qu'aucun projet Firebase n'est configuré (Nouakchott par défaut)
+const DEMO_MOSQUE = {
+  name: "Mosquée Ibn Abbas (démo)", city: "Nouakchott",
+  lat: 18.0858, lng: -15.9785, timezone: "Africa/Nouakchott",
+  calcMethod: "MWL", asrMethod: "standard",
+  adjustments: { fajr:0, sunrise:0, dhuhr:0, asr:0, maghrib:0, isha:0 },
+  iqamaDelays: { fajr:20, dhuhr:15, asr:15, maghrib:5, isha:15 },
+  branding: { announcementText: "Mode démonstration — configurez vos clés Firebase pour activer le couplage en direct." }
+};
+
+const PRAYER_NAMES = { fajr:"Fajr", sunrise:"Lever", dhuhr:"Dhuhr", asr:"Asr", maghrib:"Maghrib", isha:"Isha" };
+const PRAYER_ORDER = ["fajr","sunrise","dhuhr","asr","maghrib","isha"];
+
+// Angles par méthode de calcul (fajr / isha), en degrés. Isha "90" = minutes fixes après maghrib (Makkah).
+const CALC_METHODS = {
+  MWL:      { fajr:18,   isha:17   },
+  ISNA:     { fajr:15,   isha:15   },
+  Egyptian: { fajr:19.5, isha:17.5 },
+  Karachi:  { fajr:18,   isha:18   },
+  Makkah:   { fajr:18.5, ishaMinutes:90 }
+};
+
+// ------------------------------------------------------------------
+// 1. CALCUL ASTRONOMIQUE DES HORAIRES (100% offline)
+// ------------------------------------------------------------------
+function julianDate(date){
+  let y = date.getUTCFullYear(), m = date.getUTCMonth()+1, d = date.getUTCDate();
+  if (m <= 2){ y -= 1; m += 12; }
+  const A = Math.floor(y/100), B = 2 - A + Math.floor(A/4);
+  return Math.floor(365.25*(y+4716)) + Math.floor(30.6001*(m+1)) + d + B - 1524.5;
+}
+function sunPosition(jd){
+  const D = jd - 2451545.0;
+  const g = (357.529 + 0.98560028*D) % 360;
+  const q = (280.459 + 0.98564736*D) % 360;
+  const L = (q + 1.915*Math.sin(g*Math.PI/180) + 0.020*Math.sin(2*g*Math.PI/180)) % 360;
+  const e = 23.439 - 0.00000036*D;
+  const RA = (Math.atan2(Math.cos(e*Math.PI/180)*Math.sin(L*Math.PI/180), Math.cos(L*Math.PI/180)) * 180/Math.PI) / 15;
+  const decl = Math.asin(Math.sin(e*Math.PI/180) * Math.sin(L*Math.PI/180)) * 180/Math.PI;
+  const eqTime = q/15 - fixHour(RA);
+  return { decl, eqTime };
+}
+function fixHour(h){ h = h % 24; return h < 0 ? h + 24 : h; }
+function hourAngle(lat, decl, angleDeg){
+  const latR = lat*Math.PI/180, declR = decl*Math.PI/180, angR = -angleDeg*Math.PI/180;
+  const cosH = (Math.sin(angR) - Math.sin(latR)*Math.sin(declR)) / (Math.cos(latR)*Math.cos(declR));
+  if (cosH > 1 || cosH < -1) return null; // soleil ne descend/monte pas assez (hautes latitudes)
+  return Math.acos(cosH) * 180/Math.PI / 15;
+}
+function asrHourAngle(lat, decl, shadowFactor){
+  const latR = lat*Math.PI/180, declR = decl*Math.PI/180;
+  const angle = -Math.atan(1/(shadowFactor + Math.tan(Math.abs(latR-declR)))) * 180/Math.PI;
+  return hourAngle(lat, decl, angle);
+}
+// Retourne les horaires (heures décimales, temps solaire local) pour une date/lieu/méthode donnés
+function computePrayerTimes(date, lat, lng, tzOffsetHours, methodKey, asrMethod, adjustments){
+  const method = CALC_METHODS[methodKey] || CALC_METHODS.MWL;
+  const jd = julianDate(date);
+  const { decl, eqTime } = sunPosition(jd);
+  const dhuhrSolar = 12 - lng/15 - eqTime/60 * (-1) + tzOffsetHours - lng/15; // simplifié ci-dessous
+  // Formule standard : Dhuhr(local) = 12 + tzOffset - lng/15 - eqTime/60
+  const dhuhr = 12 + tzOffsetHours - lng/15 - eqTime/60;
+
+  const haFajr = hourAngle(lat, decl, method.fajr);
+  const haSun  = hourAngle(lat, decl, 0.833); // réfraction standard lever/coucher
+  const shadow = asrMethod === "hanafi" ? 2 : 1;
+  const haAsr  = asrHourAngle(lat, decl, shadow);
+  const haIsha = method.ishaMinutes ? null : hourAngle(lat, decl, method.isha);
+
+  const times = {};
+  times.fajr    = haFajr !== null ? dhuhr - haFajr : null;
+  times.sunrise = haSun  !== null ? dhuhr - haSun  : null;
+  times.dhuhr   = dhuhr;
+  times.asr     = haAsr  !== null ? dhuhr + haAsr  : null;
+  times.maghrib = haSun  !== null ? dhuhr + haSun  : null;
+  times.isha    = method.ishaMinutes
+                    ? (times.maghrib !== null ? times.maghrib + method.ishaMinutes/60 : null)
+                    : (haIsha !== null ? dhuhr + haIsha : null);
+
+  PRAYER_ORDER.forEach(k=>{
+    if (times[k] !== null) times[k] = times[k] + (adjustments && adjustments[k] ? adjustments[k]/60 : 0);
+  });
+  return times;
+}
+function decimalToHM(dec){
+  if (dec === null || isNaN(dec)) return null;
+  let h = Math.floor(fixHour(dec));
+  let m = Math.round((fixHour(dec) - h) * 60);
+  if (m === 60){ m = 0; h = (h+1)%24; }
+  return { h, m };
+}
+function fmtHM(hm){ if(!hm) return "—:—"; return String(hm.h).padStart(2,"0")+":"+String(hm.m).padStart(2,"0"); }
+
+// ------------------------------------------------------------------
+// 2. RÉSILIENCE HORLOGE — détection d'une heure système invraisemblable
+// ------------------------------------------------------------------
+function getReliableNow(){
+  const now = new Date();
+  if (now.getFullYear() < 2024){
+    // horloge visiblement fausse (redémarrage sans RTC + pas encore de sync réseau)
+    const cached = localStorage.getItem("mc_last_good_time");
+    if (cached) return new Date(parseInt(cached,10));
+  }
+  localStorage.setItem("mc_last_good_time", Date.now().toString());
+  return now;
+}
+
+// ------------------------------------------------------------------
+// 3. ÉTAT LOCAL / CACHE
+// ------------------------------------------------------------------
+let mosqueData = JSON.parse(localStorage.getItem("mc_mosque_cache") || "null");
+let mosqueId = localStorage.getItem("mc_mosque_id");
+let screenId = localStorage.getItem("mc_screen_id");
+let unsubscribeMosque = null;
+
+function cacheMosque(data){
+  // Normalise le Timestamp Firestore (non sérialisable tel quel) en millisecondes pour le cache localStorage
+  if (data.khutba && data.khutba.startedAt && typeof data.khutba.startedAt.toMillis === "function"){
+    data.khutba = { active: data.khutba.active, startedAtMillis: data.khutba.startedAt.toMillis() };
+  }
+  mosqueData = data;
+  localStorage.setItem("mc_mosque_cache", JSON.stringify(data));
+}
+
+function setStatus(state){
+  const dot = document.getElementById("statusDot");
+  const txt = document.getElementById("statusText");
+  dot.className = "dot " + (state === "online" ? "" : state);
+  txt.textContent = state === "online" ? "En ligne" : state === "syncing" ? "Synchronisation…" : "Hors ligne (cache local)";
+}
+
+// ------------------------------------------------------------------
+// 4. COUPLAGE (pairing)
+// ------------------------------------------------------------------
+function generatePairingCode(){ return String(Math.floor(100000 + Math.random()*900000)); }
+
+async function startPairing(){
+  document.getElementById("pairingScreen").classList.remove("hidden");
+  document.getElementById("mainScreen").classList.add("hidden");
+  let code = localStorage.getItem("mc_pairing_code");
+  if (!code){
+    code = generatePairingCode();
+    localStorage.setItem("mc_pairing_code", code);
+    await db.collection("pairingCodes").doc(code).set({
+      status:"waiting", mosqueId:null, screenId:null,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+  }
+  document.getElementById("pairingCode").textContent = code.replace(/(\d{3})(\d{3})/,"$1 $2");
+
+  db.collection("pairingCodes").doc(code).onSnapshot(doc=>{
+    const d = doc.data();
+    if (d && d.status === "claimed" && d.mosqueId){
+      mosqueId = d.mosqueId; screenId = d.screenId;
+      localStorage.setItem("mc_mosque_id", mosqueId);
+      localStorage.setItem("mc_screen_id", screenId);
+      localStorage.removeItem("mc_pairing_code");
+      document.getElementById("pairingScreen").classList.add("hidden");
+      document.getElementById("mainScreen").classList.remove("hidden");
+      listenToMosque();
+    }
+  });
+}
+
+function listenToMosque(){
+  setStatus("syncing");
+  unsubscribeMosque = db.collection("mosques").doc(mosqueId).onSnapshot(doc=>{
+    if (doc.exists){ cacheMosque(doc.data()); setStatus("online"); renderMosqueHeader(); }
+  }, err=>{ setStatus("offline"); });
+
+  // heartbeat toutes les 5 minutes
+  setInterval(()=>{
+    if (screenId){
+      db.collection("mosques").doc(mosqueId).collection("screens").doc(screenId)
+        .set({ lastSeen: firebase.firestore.FieldValue.serverTimestamp() }, { merge:true })
+        .catch(()=>{});
+    }
+  }, 5*60*1000);
+}
+
+function renderMosqueHeader(){
+  if (!mosqueData) return;
+  document.getElementById("mosqueName").textContent = mosqueData.name || "Mosquée";
+  document.getElementById("mosqueCity").textContent = mosqueData.city || "";
+
+  const announce = (mosqueData.branding && mosqueData.branding.announcementText) || "";
+  document.getElementById("ticker").textContent = announce;
+  document.getElementById("tickerWrap").classList.toggle("empty", !announce.trim());
+
+  const khutbaActive = mosqueData.khutba && mosqueData.khutba.active;
+  document.getElementById("khutbaScreen").classList.toggle("hidden", !khutbaActive);
+}
+
+function updateKhutbaTimer(){
+  if (!mosqueData || !mosqueData.khutba || !mosqueData.khutba.active) return;
+  const startedMillis = mosqueData.khutba.startedAtMillis
+    || (mosqueData.khutba.startedAt && mosqueData.khutba.startedAt.toMillis && mosqueData.khutba.startedAt.toMillis());
+  if (!startedMillis) return;
+  const elapsedSec = Math.max(0, Math.floor((getReliableNow().getTime() - startedMillis) / 1000));
+  const m = Math.floor(elapsedSec / 60), s = elapsedSec % 60;
+  document.getElementById("khutbaTimer").textContent = String(m).padStart(2,"0") + ":" + String(s).padStart(2,"0");
+}
+
+// ------------------------------------------------------------------
+// 5. BOUCLE D'AFFICHAGE (horloge, compte à rebours, arc de la prochaine prière)
+// ------------------------------------------------------------------
+const MONTHS_FR = ["janvier","février","mars","avril","mai","juin","juillet","août","septembre","octobre","novembre","décembre"];
+const DAYS_FR = ["dimanche","lundi","mardi","mercredi","jeudi","vendredi","samedi"];
+
+function gregorianLabel(d){
+  return DAYS_FR[d.getDay()] + " " + d.getDate() + " " + MONTHS_FR[d.getMonth()] + " " + d.getFullYear();
+}
+// Approximation du calendrier Hijri (suffisant pour affichage ; ajustable +/-1j selon visibilité lunaire locale)
+function hijriLabel(d){
+  const jd = julianDate(d) + 0.5;
+  let l = Math.floor(jd) - 1948440 + 10632;
+  const n = Math.floor((l-1)/10631);
+  l = l - 10631*n + 354;
+  const j = (Math.floor((10985-l)/5316))*(Math.floor((50*l)/17719)) + (Math.floor(l/5670))*(Math.floor((43*l)/15238));
+  l = l - (Math.floor((30-j)/15))*(Math.floor((17719*j)/50)) - (Math.floor(j/16))*(Math.floor((15238*j)/43)) + 29;
+  const month = Math.floor((24*l)/709);
+  const day = l - Math.floor((709*month)/24);
+  const year = 30*n + j - 30;
+  const HMONTHS = ["Mouharram","Safar","Rabi al-Awwal","Rabi al-Thani","Joumada al-Oula","Joumada al-Thania","Rajab","Chaabane","Ramadan","Chawwal","Dhou al-Qi'da","Dhou al-Hijja"];
+  return day + " " + HMONTHS[month-1] + " " + year + " H";
+}
+
+function updateClock(){
+  const now = getReliableNow();
+  document.getElementById("clock").innerHTML =
+    String(now.getHours()).padStart(2,"0")+":"+String(now.getMinutes()).padStart(2,"0") +
+    '<span class="sec" id="clockSec">'+String(now.getSeconds()).padStart(2,"0")+'</span>';
+  document.getElementById("gregDate").textContent = gregorianLabel(now);
+  document.getElementById("hijriDate").innerHTML = "<b>"+hijriLabel(now)+"</b>";
+
+  updateKhutbaTimer();
+
+  if (!mosqueData) return;
+  const tzOffset = -now.getTimezoneOffset()/60; // fallback: fuseau du device. Idéalement dérivé de mosqueData.timezone.
+  const times = computePrayerTimes(now, mosqueData.lat, mosqueData.lng, tzOffset, mosqueData.calcMethod, mosqueData.asrMethod, mosqueData.adjustments);
+  renderPrayers(times, now);
+}
+
+function renderPrayers(times, now){
+  const row = document.getElementById("prayersRow");
+  const nowMin = now.getHours()*60 + now.getMinutes() + now.getSeconds()/60;
+
+  // détermine la prochaine prière (parmi fajr..isha, hors "sunrise" pour le calcul de l'arc)
+  const iqamaOrder = ["fajr","dhuhr","asr","maghrib","isha"];
+  let next = null, nextMin = null, minDelta = Infinity;
+  iqamaOrder.forEach(k=>{
+    const hm = decimalToHM(times[k]);
+    if (!hm) return;
+    let mins = hm.h*60 + hm.m;
+    let delta = mins - nowMin;
+    if (delta < 0) delta += 24*60;
+    if (delta < minDelta){ minDelta = delta; next = k; nextMin = mins; }
+  });
+
+  row.innerHTML = "";
+  PRAYER_ORDER.forEach(k=>{
+    const hm = decimalToHM(times[k]);
+    const card = document.createElement("div");
+    card.className = "prayer-card" + (k === next ? " active" : "");
+    const iqama = mosqueData.iqamaDelays && mosqueData.iqamaDelays[k];
+    card.innerHTML =
+      '<div class="pname">'+PRAYER_NAMES[k]+'</div>' +
+      '<div class="ptime">'+fmtHM(hm)+'</div>' +
+      (iqama ? '<div class="piqama">Iqama +'+iqama+' min</div>' : '<div class="piqama">&nbsp;</div>');
+    row.appendChild(card);
+  });
+
+  if (next){
+    const totalWindow = 6*60; // fenêtre visuelle de remplissage : 6h avant la prière
+    const progress = Math.max(0, Math.min(1, 1 - minDelta/totalWindow));
+    document.getElementById("arcFill").style.height = (progress*100).toFixed(1)+"%";
+    document.getElementById("nextName").textContent = PRAYER_NAMES[next];
+    const h = Math.floor(minDelta/60), m = Math.floor(minDelta%60), s = Math.floor((minDelta*60)%60);
+    document.getElementById("nextCountdown").textContent =
+      "dans " + String(h).padStart(2,"0")+":"+String(m).padStart(2,"0")+":"+String(s).padStart(2,"0");
+    document.getElementById("nextCountdown").classList.toggle("light", progress < 0.55);
+  }
+}
+
+// ------------------------------------------------------------------
+// 6. DÉMARRAGE
+// ------------------------------------------------------------------
+function boot(){
+  if (DEMO_MODE){
+    // Pas de Firebase configuré : on affiche directement l'écran principal avec des données de démonstration.
+    mosqueData = DEMO_MOSQUE;
+    document.getElementById("mainScreen").classList.remove("hidden");
+    renderMosqueHeader();
+    setStatus("offline");
+    document.getElementById("statusText").textContent = "Mode démo (Firebase non configuré)";
+  } else if (mosqueId){
+    if (mosqueData) renderMosqueHeader();
+    document.getElementById("mainScreen").classList.remove("hidden");
+    listenToMosque();
+  } else {
+    startPairing();
+  }
+  setInterval(updateClock, 1000);
+  updateClock();
+}
+boot();
+</script>
+</body>
+</html>
